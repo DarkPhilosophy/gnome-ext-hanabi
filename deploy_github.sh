@@ -12,6 +12,7 @@ set -e
 
 # --- Configuration ---
 BRANCH="main"
+REMOTE="darkphilosophy"
 BUILD_COMMAND="./package.sh"
 COMMIT_MSG=""
 SKIP_CI=false
@@ -68,6 +69,7 @@ echo "========================================"
 echo "🚀 Starting Main Branch Sync & Release"
 echo "========================================"
 echo "Branch: $BRANCH"
+echo "Remote: $REMOTE"
 echo "Mode: $([ "$AMEND" == "true" ] && echo "AMEND" || echo "NEW COMMIT")"
 echo "Skip CI: $SKIP_CI"
 echo "Force Mode: $FORCE"
@@ -108,7 +110,7 @@ echo "🔄 Checking out $BRANCH..."
 git checkout "$BRANCH"
 
 echo "⬇️  Pulling latest changes from remote (Rebasing for CI bot compatibility)..."
-git pull --rebase origin "$BRANCH"
+git pull --rebase "$REMOTE" "$BRANCH"
 
 if [[ "$STASHED" == "true" ]]; then
     echo "📦 Popping stashed changes..."
@@ -146,7 +148,7 @@ if [[ "$AMEND" == "true" ]]; then
         eval "git commit $AMEND_FLAGS"
 
         echo "⬆️  Force pushing amended commit to $BRANCH..."
-        if ! git push --force-with-lease origin "$BRANCH"; then
+        if ! git push --force-with-lease "$REMOTE" "$BRANCH"; then
             echo "❌ Push failed - check remote status"
             exit 1
         fi
@@ -160,7 +162,7 @@ else
         git commit -m "$COMMIT_MSG"
 
         echo "⬆️  Pushing to $BRANCH..."
-        if ! git push origin "$BRANCH"; then
+        if ! git push "$REMOTE" "$BRANCH"; then
             echo "❌ Push failed - check remote status"
             exit 1
         fi

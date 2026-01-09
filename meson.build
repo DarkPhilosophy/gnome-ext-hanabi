@@ -2,7 +2,7 @@ project(
   'hanabi-extension',
   version: '1',
   license: 'GPL-3.0-or-later',
-  meson_version: '>= 0.56.0'
+  meson_version: '1'
 )
 
 uuid = 'hanabi-extension@jeffshee.github.io'
