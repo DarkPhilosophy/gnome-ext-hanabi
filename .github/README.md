@@ -16,7 +16,7 @@
 **Status**: Active development in this fork.
 
 <!-- EGO-VERSION-START -->
-[![Upstream Last Commit](https://img.shields.io/github/last-commit/jeffshee/gnome-ext-hanabi)](https://github.com/jeffshee/gnome-ext-hanabi)
+[![Upstream (original) last commit](https://img.shields.io/github/last-commit/jeffshee/gnome-ext-hanabi)](https://github.com/jeffshee/gnome-ext-hanabi)
 <!-- EGO-VERSION-END -->
 
 ## Validation Status

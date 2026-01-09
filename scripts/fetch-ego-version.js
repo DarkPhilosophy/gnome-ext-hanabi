@@ -7,7 +7,7 @@ const README_PATH = path.join(PROJECT_DIR, '.github', 'README.md');
 const UPSTREAM_REPO = 'jeffshee/gnome-ext-hanabi';
 const UPSTREAM_URL = `https://github.com/${UPSTREAM_REPO}`;
 
-const block = `<!-- EGO-VERSION-START -->\n[![Upstream Last Commit](https://img.shields.io/github/last-commit/${UPSTREAM_REPO})](${UPSTREAM_URL})\n<!-- EGO-VERSION-END -->`;
+const block = `<!-- EGO-VERSION-START -->\n[![Upstream (original) last commit](https://img.shields.io/github/last-commit/${UPSTREAM_REPO})](${UPSTREAM_URL})\n<!-- EGO-VERSION-END -->`;
 
 try {
     const readmeContent = fs.readFileSync(README_PATH, 'utf8');

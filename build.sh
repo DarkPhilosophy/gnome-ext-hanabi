@@ -73,11 +73,6 @@ if [ $ENABLED -gt 0 ]; then
     sleep 1
 fi
 
-# Generate build date
-echo "Generating build date..."
-BUILD_DATE=$(date -u +"%Y-%m-%d %H:%M:%S UTC")
-echo "$BUILD_DATE" > "$PROJECT_DIR/build_date.txt"
-
 # Build with meson/ninja
 echo "Compiling with Meson/Ninja..."
 meson build --wipe --prefix="$HOME/.local" > /dev/null 2>&1
@@ -88,9 +83,9 @@ echo "✓ Build complete"
 echo "Installing to user directory..."
 ninja -C build install > /dev/null 2>&1
 
-# Copy build_date.txt to extension directory
-mkdir -p "$USER_EXTENSION_DIR"
-cp "$PROJECT_DIR/build_date.txt" "$USER_EXTENSION_DIR/"
+# Stamp build date into prefs.js in the installed extension
+BUILD_DATE=$(date -u +"%Y-%m-%d %H:%M:%S UTC")
+sed -i "s|^const BUILD_DATE = null;|const BUILD_DATE = '$BUILD_DATE';|" "$USER_EXTENSION_DIR/prefs.js"
 
 echo "✓ Installed to $USER_EXTENSION_DIR"
 
@@ -110,7 +105,7 @@ echo ""
 echo "=========================================="
 echo "✅ Build Complete!"
 echo "=========================================="
-echo "Build date: $(cat "$PROJECT_DIR/build_date.txt")"
+echo "Build date: $BUILD_DATE"
 echo "Extension ID: $EXTENSION_ID"
 echo "Location: $USER_EXTENSION_DIR"
 echo ""

@@ -24,19 +24,14 @@ import Gtk from 'gi://Gtk';
 import {ExtensionPreferences, gettext as _} from 'resource:///org/gnome/Shell/Extensions/js/extensions/prefs.js';
 
 const VERSION = '1.0';
+const BUILD_DATE = null;
 
 /**
  *
  */
 function getBuildDate() {
-    try {
-        const buildDatePath = import.meta.url.replace('file://', '').replace('/prefs.js', '/build_date.txt');
-        const content = Gio.File.new_for_path(buildDatePath).load_contents(null);
-        if (content[0])
-            return content[1].toString().trim();
-    } catch (e) {
-        // File not found or error reading
-    }
+    if (BUILD_DATE)
+        return BUILD_DATE;
     return 'Unknown';
 }
 

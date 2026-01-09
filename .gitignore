@@ -1,5 +1,5 @@
-# Hanabi extension
-src/video.*
+# Extension
+extension/video.*
 .build
 
 # Logs
@@ -11,7 +11,16 @@ yarn-error.log*
 lerna-debug.log*
 .pnpm-debug.log*
 
-# Dependency directories
+# Scripts & lint
+deploy_github.sh
+lint_check.sh
+
+# Build artifacts
+gschemas.compiled
+*.zip
+*.tar.gz
+
+# Dependencies directories
 node_modules/
 
 # Optional npm cache directory
@@ -30,5 +39,14 @@ node_modules/
 # Translation binaries
 *.mo
 
+# OS generated files
+.DS_Store
+Thumbs.db
+*~
+
+# VSCode
+.vscode
+
 # Backups
-*.backup-*
+*.backup*
+*.bak
