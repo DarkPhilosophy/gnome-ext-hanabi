@@ -2,9 +2,18 @@
   "name": "gnome-ext-hanabi",
   "version": "1.0.0",
   "description": "Live Wallpaper for GNOME",
-  "main": "extension.js",
-  "repository": "https://github.com/jeffshee/gnome-ext-hanabi",
-  "author": "Jeff Shee",
+  "main": "extension/extension.js",
+  "scripts": {
+    "lint": "./lint_check.sh",
+    "lint:fix": "./lint_check.sh --fix",
+    "lint:status": "node scripts/update-lint-status.js",
+    "package": "./package.sh"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/DarkPhilosophy/gnome-ext-hanabi.git"
+  },
+  "author": "DarkPhilosophy",
   "license": "GPL-3.0-or-later",
   "devDependencies": {
     "eslint": "^8.34.0",

@@ -121,7 +121,7 @@ const isEnableNvSl = extSettings
     ? extSettings.get_boolean('enable-nvsl')
     : false;
 
-let codePath = 'src';
+let codePath = 'extension';
 let contentFit = null;
 if (haveContentFit) {
     contentFit = extSettings

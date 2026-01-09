@@ -8,13 +8,13 @@ echo ""
 
 # Test 1: Check if performance.js exists
 echo "Test 1: Checking performance monitoring system..."
-if [ -f "src/performance.js" ]; then
+if [ -f "extension/performance.js" ]; then
     echo "✓ Performance monitoring system added"
     
     # Check for key features
-    if grep -q "PerformanceMonitor" src/performance.js && \
-       grep -q "recordFrame" src/performance.js && \
-       grep -q "getMetrics" src/performance.js; then
+    if grep -q "PerformanceMonitor" extension/performance.js && \
+       grep -q "recordFrame" extension/performance.js && \
+       grep -q "getMetrics" extension/performance.js; then
         echo "✓ Performance monitor has all required methods"
     else
         echo "✗ Performance monitor missing required methods"
@@ -27,19 +27,19 @@ echo ""
 
 # Test 2: Check launcher optimizations
 echo "Test 2: Checking launcher optimizations..."
-if grep -q "GLib.PRIORITY_LOW" src/launcher.js; then
+if grep -q "GLib.PRIORITY_LOW" extension/launcher.js; then
     echo "✓ Launcher uses optimized priorities"
 else
     echo "✗ Launcher not using optimized priorities"
 fi
 
-if grep -q "_outputBuffer" src/launcher.js; then
+if grep -q "_outputBuffer" extension/launcher.js; then
     echo "✓ Launcher has batched logging"
 else
     echo "✗ Launcher missing batched logging"
 fi
 
-if grep -q "try {" src/launcher.js && grep -q "catch (e)" src/launcher.js; then
+if grep -q "try {" extension/launcher.js && grep -q "catch (e)" extension/launcher.js; then
     echo "✓ Launcher has enhanced error handling"
 else
     echo "✗ Launcher missing error handling"
@@ -49,19 +49,19 @@ echo ""
 
 # Test 3: Check extension optimizations
 echo "Test 3: Checking extension optimizations..."
-if grep -q "PerformanceMonitor" src/extension.js; then
+if grep -q "PerformanceMonitor" extension/extension.js; then
     echo "✓ Extension integrates performance monitoring"
 else
     echo "✗ Extension missing performance monitoring"
 fi
 
-if grep -q "cleanupCurrentProcess" src/extension.js; then
+if grep -q "cleanupCurrentProcess" extension/extension.js; then
     echo "✓ Extension has proper cleanup method"
 else
     echo "✗ Extension missing cleanup method"
 fi
 
-if grep -q "GLib.PRIORITY_LOW" src/extension.js; then
+if grep -q "GLib.PRIORITY_LOW" extension/extension.js; then
     echo "✓ Extension uses optimized priorities"
 else
     echo "✗ Extension not using optimized priorities"
@@ -71,19 +71,19 @@ echo ""
 
 # Test 4: Check renderer optimizations
 echo "Test 4: Checking renderer optimizations..."
-if grep -q "targetFPS" src/renderer/renderer.js; then
+if grep -q "targetFPS" extension/renderer/renderer.js; then
     echo "✓ Renderer has frame rate control"
 else
     echo "✗ Renderer missing frame rate control"
 fi
 
-if grep -q "_controlFrameRate" src/renderer/renderer.js; then
+if grep -q "_controlFrameRate" extension/renderer/renderer.js; then
     echo "✓ Renderer has frame rate control method"
 else
     echo "✗ Renderer missing frame rate control method"
 fi
 
-if grep -q "destroy" src/renderer/renderer.js; then
+if grep -q "destroy" extension/renderer/renderer.js; then
     echo "✓ Renderer has cleanup method"
 else
     echo "✗ Renderer missing cleanup method"
@@ -95,15 +95,15 @@ echo ""
 echo "Test 5: Checking memory leak prevention..."
 memory_leak_prevention=0
 
-if grep -q "this._outputBuffer = ''" src/launcher.js; then
+if grep -q "this._outputBuffer = ''" extension/launcher.js; then
     ((memory_leak_prevention++))
 fi
 
-if grep -q "GLib.source_remove" src/extension.js; then
+if grep -q "GLib.source_remove" extension/extension.js; then
     ((memory_leak_prevention++))
 fi
 
-if grep -q "GLib.source_remove" src/renderer/renderer.js; then
+if grep -q "GLib.source_remove" extension/renderer/renderer.js; then
     ((memory_leak_prevention++))
 fi
 
@@ -119,15 +119,15 @@ echo ""
 echo "Test 6: Checking error handling..."
 error_handling=0
 
-if grep -q "logError" src/extension.js; then
+if grep -q "logError" extension/extension.js; then
     ((error_handling++))
 fi
 
-if grep -q "catch (e)" src/launcher.js; then
+if grep -q "catch (e)" extension/launcher.js; then
     ((error_handling++))
 fi
 
-if grep -q "try {" src/renderer/renderer.js; then
+if grep -q "try {" extension/renderer/renderer.js; then
     ((error_handling++))
 fi
 

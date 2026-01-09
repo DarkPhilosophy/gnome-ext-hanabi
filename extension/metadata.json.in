@@ -6,7 +6,7 @@
   "shell-version": [
     "49"
   ],
-  "url": "https://github.com/jeffshee/gnome-ext-hanabi",
+  "url": "https://github.com/DarkPhilosophy/gnome-ext-hanabi",
   "uuid": "@uuid@",
   "version": @version@
 }

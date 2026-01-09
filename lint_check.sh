@@ -6,7 +6,7 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-EXT_DIR="$SCRIPT_DIR/src"
+EXT_DIR="$SCRIPT_DIR/extension"
 CONFIG_DIR="$SCRIPT_DIR"
 
 # Parse arguments

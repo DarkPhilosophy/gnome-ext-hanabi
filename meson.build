@@ -23,4 +23,4 @@ if npm_exe.found()
   run_target('dev', command: [ npm_exe, 'install', '--save-dev' ])
 endif
 
-subdir('src')
+subdir('extension')

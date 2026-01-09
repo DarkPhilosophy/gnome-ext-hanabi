@@ -23,12 +23,12 @@ elif [ "$1" == "uninstall" ]; then
     gnome-extensions uninstall "$UUID"
 elif [ "$1" == "renderer" ]; then
     shift
-    ./src/renderer/renderer.js "$@"
+    ./extension/renderer/renderer.js "$@"
 elif [ "$1" == "log" ]; then
     journalctl -f -o cat /usr/bin/gnome-shell
 elif [ "$1" == "pot" ]; then
-    POT_FILE="src/po/hanabi-extension@jeffshee.github.io.pot"
-    find src/ -iname "*.js" -print0 | xargs -0 xgettext --from-code=UTF-8 --output="$POT_FILE"
+    POT_FILE="extension/po/hanabi-extension@jeffshee.github.io.pot"
+    find extension/ -iname "*.js" -print0 | xargs -0 xgettext --from-code=UTF-8 --output="$POT_FILE"
     sed -i "s/SOME DESCRIPTIVE TITLE./Gnome Shell Extension - Hanabi/g" "$POT_FILE"
     sed -i "s/YEAR THE PACKAGE'S COPYRIGHT HOLDER/2023 Jeff Shee (jeffshee8969@gmail.com)/g" "$POT_FILE"
     sed -i "s/PACKAGE package/gnome-ext-hanabi package/g" "$POT_FILE"
