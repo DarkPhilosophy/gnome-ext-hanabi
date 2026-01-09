@@ -16,9 +16,31 @@
  */
 
 import Gio from 'gi://Gio';
+import GLib from 'gi://GLib';
 
 const schemaId = 'io.github.jeffshee.hanabi-extension';
 const logPrefix = 'Hanabi:';
+
+const LogLevel = {
+    VERBOSE: 0,
+    DEBUG: 1,
+    INFO: 2,
+    WARN: 3,
+    ERROR: 4,
+};
+
+const LOG_LEVEL_NAMES = {
+    [LogLevel.VERBOSE]: '[VERBOSE]',
+    [LogLevel.DEBUG]: '[DEBUG]',
+    [LogLevel.INFO]: '[INFO]',
+    [LogLevel.WARN]: '[WARN]',
+    [LogLevel.ERROR]: '[ERROR]',
+};
+
+let currentLogLevel = LogLevel.WARN;
+let logToFileEnabled = false;
+let currentLogFilePath = null;
+let logFileInitialized = false;
 
 export class Logger {
     constructor(opt = undefined) {
@@ -28,45 +50,196 @@ export class Logger {
 
         this.logPrefix = logPrefix;
         this.logOpt = opt;
-        this.isDebugMode = this._settings ? this._settings.get_boolean('debug-mode') : false;
 
-        this._settings?.connect('changed::debug-mode', () => {
-            this.isDebugMode = this._settings.get_boolean('debug-mode');
-        });
+        if (this._settings) {
+            const updateLogSettings = () => {
+                const debugEnabled = this._settings.get_boolean('debug-mode');
+                if (!debugEnabled) {
+                    currentLogLevel = LogLevel.WARN;
+                    logToFileEnabled = false;
+                    currentLogFilePath = null;
+                    logFileInitialized = false;
+                    return;
+                }
+
+                const selected = this._settings.get_int('log-level');
+                const normalized = Math.max(LogLevel.VERBOSE, Math.min(LogLevel.ERROR, selected));
+                currentLogLevel = normalized;
+                logToFileEnabled = this._settings.get_boolean('log-to-file');
+                if (logToFileEnabled) {
+                    const resolved = resolveLogFilePath(this._settings);
+                    if (resolved !== currentLogFilePath) {
+                        logFileInitialized = false;
+                        currentLogFilePath = resolved;
+                    }
+                    initLogFile(currentLogFilePath);
+                } else {
+                    currentLogFilePath = null;
+                    logFileInitialized = false;
+                }
+            };
+
+            updateLogSettings();
+            this._settings.connect('changed::debug-mode', updateLogSettings);
+            this._settings.connect('changed::log-level', updateLogSettings);
+            this._settings.connect('changed::log-to-file', updateLogSettings);
+            this._settings.connect('changed::log-filepath', updateLogSettings);
+        }
     }
 
     _processArgs(args) {
-        args.unshift(this.logOpt ? `${this.logPrefix} (${this.logOpt})` : this.logPrefix);
-        return args;
+        const base = this.logOpt ? `${this.logPrefix} (${this.logOpt})` : this.logPrefix;
+        return [base, ...args];
     }
 
     log(...args) {
-        console.log(...this._processArgs(args));
+        this._logAtLevel(LogLevel.INFO, console.log, args);
     }
 
     debug(...args) {
-        /**
-         * If `debug-mode` is true, use `console.log`.
-         * Otherwise, use `console.debug` for internal logging.
-         * (Visible when `GLib.log_set_debug_enabled(true)` is called in Looking Glass)
-         */
-        args = this._processArgs(args);
-        if (this.isDebugMode)
-            console.log(...args);
-        else
-            console.debug(...args);
+        this._logAtLevel(LogLevel.DEBUG, console.log, args);
     }
 
     warn(...args) {
-        console.warn(...this._processArgs(args));
+        this._logAtLevel(LogLevel.WARN, console.warn, args);
     }
 
     error(...args) {
-        console.error(...this._processArgs(args));
+        this._logAtLevel(LogLevel.ERROR, console.error, args);
     }
 
     trace(...args) {
-        console.trace(...this._processArgs(args));
+        const message = this._formatMessageWithLevel(LogLevel.DEBUG, args);
+        if (LogLevel.DEBUG < currentLogLevel)
+            return;
+        console.trace(message);
+        this._writeToFile(message);
+    }
+
+    _logAtLevel(level, consoleFn, args) {
+        if (level < currentLogLevel)
+            return;
+        const message = this._formatMessageWithLevel(level, args);
+        consoleFn(message);
+        this._writeToFile(message);
+    }
+
+    _formatMessageWithLevel(level, args) {
+        const timestamp = new Date().toISOString();
+        const levelName = LOG_LEVEL_NAMES[level] ?? LOG_LEVEL_NAMES[LogLevel.DEBUG];
+        const prefix = `${timestamp} ${levelName} ${this.logOpt ? `${this.logPrefix} (${this.logOpt})` : this.logPrefix}`;
+        const content = this._processArgs(args)
+            .slice(1)
+            .map(arg => formatValue(arg))
+            .join(' ');
+        return `${prefix} ${content}`;
+    }
+
+    _writeToFile(message) {
+        if (!logToFileEnabled || !currentLogFilePath)
+            return;
+        appendLogLine(currentLogFilePath, message);
+    }
+}
+
+/**
+ *
+ * @param settings
+ */
+function resolveLogFilePath(settings) {
+    const configured = settings.get_string('log-filepath').trim();
+    if (configured.length === 0)
+        return GLib.build_filenamev([GLib.get_user_cache_dir(), 'hanabi', 'hanabi.log']);
+
+    if (configured.startsWith('/'))
+        return configured;
+
+    return GLib.build_filenamev([GLib.get_home_dir(), configured]);
+}
+
+/**
+ *
+ * @param path
+ */
+function ensureLogDirectory(path) {
+    const file = Gio.File.new_for_path(path);
+    const parent = file.get_parent();
+    if (parent && !parent.query_exists(null)) {
+        try {
+            parent.make_directory_with_parents(null);
+        } catch (error) {
+            console.error(`[Hanabi] Failed to create log dir: ${error.message}`);
+        }
+    }
+}
+
+/**
+ *
+ * @param path
+ */
+function rotateLogFile(path) {
+    const file = Gio.File.new_for_path(path);
+    if (!file.query_exists(null))
+        return;
+
+    const oldFile = Gio.File.new_for_path(`${path}.old`);
+    if (oldFile.query_exists(null)) {
+        try {
+            oldFile.delete(null);
+        } catch (error) {
+            console.error(`[Hanabi] Failed to delete old log: ${error.message}`);
+        }
+    }
+
+    try {
+        file.move(oldFile, Gio.FileCopyFlags.OVERWRITE, null, null);
+    } catch (error) {
+        console.error(`[Hanabi] Failed to rotate log: ${error.message}`);
+    }
+}
+
+/**
+ *
+ * @param path
+ */
+function initLogFile(path) {
+    if (logFileInitialized && path === currentLogFilePath)
+        return;
+    ensureLogDirectory(path);
+    rotateLogFile(path);
+    logFileInitialized = true;
+}
+
+/**
+ *
+ * @param path
+ * @param line
+ */
+function appendLogLine(path, line) {
+    try {
+        ensureLogDirectory(path);
+        const file = Gio.File.new_for_path(path);
+        const output = `${line}\n`;
+        const stream = file.append_to(Gio.FileCreateFlags.NONE, null);
+        const bytes = new TextEncoder().encode(output);
+        stream.write_all(bytes, null);
+        stream.close(null);
+    } catch (error) {
+        console.error(`[Hanabi] Failed to write log: ${error.message}`);
+    }
+}
+
+/**
+ *
+ * @param value
+ */
+function formatValue(value) {
+    if (typeof value === 'string')
+        return value;
+    try {
+        return JSON.stringify(value);
+    } catch {
+        return String(value);
     }
 }
 
@@ -78,7 +251,7 @@ export class Logger {
  * @param obj
  */
 export const getMethods = obj => {
-    let properties = new Set();
+    const properties = new Set();
     let currentObj = obj;
     do
         Object.getOwnPropertyNames(currentObj).map(item => properties.add(item));

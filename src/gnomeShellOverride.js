@@ -74,7 +74,7 @@ export class GnomeShellOverride {
         /**
          * Live wallpaper
          */
-        let thisRef = this;
+        const thisRef = this;
 
         this._injectionManager.overrideMethod(Background.BackgroundManager.prototype, '_createBackgroundActor',
             originalMethod => {
@@ -123,8 +123,8 @@ export class GnomeShellOverride {
             originalMethod => {
                 // TODO: pass originalMethod to wallpaper instead
                 return function (hideRenderer = true) {
-                    let windowActors = originalMethod.call(this);
-                    let result = hideRenderer
+                    const windowActors = originalMethod.call(this);
+                    const result = hideRenderer
                         ? windowActors.filter(
                             window => !window.meta_window.title?.includes(applicationId)
                         )
@@ -138,7 +138,7 @@ export class GnomeShellOverride {
         this._injectionManager.overrideMethod(Workspace.Workspace.prototype, '_isOverviewWindow',
             originalMethod => {
                 return function (window) {
-                    let isRenderer = window.title?.includes(applicationId);
+                    const isRenderer = window.title?.includes(applicationId);
                     return isRenderer
                         ? false
                         : originalMethod.apply(this, [window]);
@@ -149,7 +149,7 @@ export class GnomeShellOverride {
         this._injectionManager.overrideMethod(WorkspaceThumbnail.WorkspaceThumbnail.prototype, '_isOverviewWindow',
             originalMethod => {
                 return function (window) {
-                    let isRenderer = window.title?.includes(applicationId);
+                    const isRenderer = window.title?.includes(applicationId);
                     return isRenderer
                         ? false
                         : originalMethod.apply(this, [window]);
@@ -161,11 +161,11 @@ export class GnomeShellOverride {
         this._injectionManager.overrideMethod(Meta.Display.prototype, 'get_tab_list',
             originalMethod => {
                 return function (type, workspace) {
-                    let metaWindows = originalMethod.apply(this, [
+                    const metaWindows = originalMethod.apply(this, [
                         type,
                         workspace,
                     ]);
-                    let result = metaWindows.filter(
+                    const result = metaWindows.filter(
                         metaWindow => !metaWindow.title?.includes(applicationId)
                     );
                     return result;
@@ -181,7 +181,7 @@ export class GnomeShellOverride {
         this._injectionManager.overrideMethod(Shell.WindowTracker.prototype, 'get_window_app',
             originalMethod => {
                 return function (window) {
-                    let isRenderer = window.title?.includes(applicationId);
+                    const isRenderer = window.title?.includes(applicationId);
                     return isRenderer
                         ? null
                         : originalMethod.apply(this, [window]);
@@ -192,8 +192,8 @@ export class GnomeShellOverride {
         this._injectionManager.overrideMethod(Shell.App.prototype, 'get_windows',
             originalMethod => {
                 return function () {
-                    let metaWindows = originalMethod.call(this);
-                    let result = metaWindows.filter(
+                    const metaWindows = originalMethod.call(this);
+                    const result = metaWindows.filter(
                         metaWindow => !metaWindow.title?.includes(applicationId)
                     );
                     return result;
@@ -204,7 +204,7 @@ export class GnomeShellOverride {
         this._injectionManager.overrideMethod(Shell.App.prototype, 'get_n_windows',
             _originalMethod => {
                 return function () {
-                    let app = this;
+                    const app = this;
                     return app.get_windows().length;
                 };
             }
@@ -214,8 +214,8 @@ export class GnomeShellOverride {
         this._injectionManager.overrideMethod(Shell.AppSystem.prototype, 'get_running',
             originalMethod => {
                 return function () {
-                    let runningApps = originalMethod.call(this);
-                    let result = runningApps.filter(app => app.get_n_windows() > 0);
+                    const runningApps = originalMethod.call(this);
+                    const result = runningApps.filter(app => app.get_n_windows() > 0);
                     return result;
                 };
             }

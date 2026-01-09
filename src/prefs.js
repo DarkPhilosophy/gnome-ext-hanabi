@@ -23,6 +23,23 @@ import Gtk from 'gi://Gtk';
 
 import {ExtensionPreferences, gettext as _} from 'resource:///org/gnome/Shell/Extensions/js/extensions/prefs.js';
 
+const VERSION = '1.0';
+
+/**
+ *
+ */
+function getBuildDate() {
+    try {
+        const buildDatePath = import.meta.url.replace('file://', '').replace('/prefs.js', '/build_date.txt');
+        const content = Gio.File.new_for_path(buildDatePath).load_contents(null);
+        if (content[0])
+            return content[1].toString().trim();
+    } catch (e) {
+        // File not found or error reading
+    }
+    return 'Unknown';
+}
+
 const haveContentFit = Gtk.get_minor_version() >= 8;
 
 export default class HanabiExtensionPreferences extends ExtensionPreferences {
@@ -30,6 +47,15 @@ export default class HanabiExtensionPreferences extends ExtensionPreferences {
         window._settings = this.getSettings();
         // Create a preferences page and group
         const page = new Adw.PreferencesPage();
+
+        /**
+         * Build Information
+         */
+        const infoGroup = new Adw.PreferencesGroup({
+            title: _('Hanabi Video Wallpaper'),
+            description: _(`Version ${VERSION} - Built: ${getBuildDate()}`),
+        });
+        page.add(infoGroup);
 
         /**
          * General
@@ -103,6 +129,7 @@ export default class HanabiExtensionPreferences extends ExtensionPreferences {
             title: _('Developer'),
         });
         page.add(developerGroup);
+        prefsRowLoadTime(window, developerGroup);
         prefsRowBoolean(
             window,
             developerGroup,
@@ -110,6 +137,72 @@ export default class HanabiExtensionPreferences extends ExtensionPreferences {
             'debug-mode',
             _('Print debug messages to log')
         );
+        const settings = window._settings;
+        const logLevelRow = new Adw.ActionRow({
+            title: _('Log Level'),
+            subtitle: _('Controls log verbosity while debug is enabled'),
+        });
+        const logLevelModel = Gtk.StringList.new([
+            _('Verbose'),
+            _('Debug'),
+            _('Info'),
+            _('Warn'),
+            _('Error'),
+        ]);
+        const logLevelDropDown = new Gtk.DropDown({
+            valign: Gtk.Align.CENTER,
+            model: logLevelModel,
+        });
+        logLevelDropDown.set_selected(settings.get_int('log-level'));
+        logLevelDropDown.connect('notify::selected', widget => {
+            settings.set_int('log-level', widget.get_selected());
+        });
+        settings.connect('changed::log-level', () => {
+            logLevelDropDown.set_selected(settings.get_int('log-level'));
+        });
+        logLevelRow.add_suffix(logLevelDropDown);
+        developerGroup.add(logLevelRow);
+
+        const logToFileRow = new Adw.ActionRow({
+            title: _('Log to File'),
+            subtitle: _('Write debug logs to a file'),
+        });
+        const logToFileSwitch = new Gtk.Switch({
+            active: settings.get_boolean('log-to-file'),
+            valign: Gtk.Align.CENTER,
+        });
+        settings.bind('log-to-file', logToFileSwitch, 'active', Gio.SettingsBindFlags.DEFAULT);
+        logToFileRow.add_suffix(logToFileSwitch);
+        developerGroup.add(logToFileRow);
+
+        const logPathRow = new Adw.ActionRow({
+            title: _('Log File Path'),
+            subtitle: _('Leave empty to use the default cache path'),
+        });
+        const logPathEntry = new Gtk.Entry({
+            text: settings.get_string('log-filepath'),
+            valign: Gtk.Align.CENTER,
+        });
+        logPathEntry.connect('changed', () => {
+            settings.set_string('log-filepath', logPathEntry.get_text());
+        });
+        settings.connect('changed::log-filepath', () => {
+            const newValue = settings.get_string('log-filepath');
+            if (logPathEntry.get_text() !== newValue)
+                logPathEntry.set_text(newValue);
+        });
+        logPathRow.add_suffix(logPathEntry);
+        developerGroup.add(logPathRow);
+
+        const updateDebugRowsVisibility = () => {
+            const show = settings.get_boolean('debug-mode');
+            logLevelRow.visible = show;
+            logToFileRow.visible = show;
+            logPathRow.visible = show && settings.get_boolean('log-to-file');
+        };
+        settings.connect('changed::debug-mode', updateDebugRowsVisibility);
+        settings.connect('changed::log-to-file', updateDebugRowsVisibility);
+        updateDebugRowsVisibility();
         prefsRowBoolean(
             window,
             developerGroup,
@@ -214,7 +307,7 @@ function prefsRowVideoPath(window, prefsGroup) {
     const title = _('Video Path');
     const key = 'video-path';
 
-    let path = settings.get_string(key);
+    const path = settings.get_string(key);
     const row = new Adw.ActionRow({
         title,
         subtitle: `${path !== '' ? path : _('None')}`,
@@ -225,10 +318,10 @@ function prefsRowVideoPath(window, prefsGroup) {
      * Video file chooser
      */
     function createDialog() {
-        let fileFilter = new Gtk.FileFilter();
+        const fileFilter = new Gtk.FileFilter();
         fileFilter.add_mime_type('video/*');
 
-        let fileChooser = new Gtk.FileChooserDialog({
+        const fileChooser = new Gtk.FileChooserDialog({
             title: _('Open File'),
             action: Gtk.FileChooserAction.OPEN,
         });
@@ -240,7 +333,7 @@ function prefsRowVideoPath(window, prefsGroup) {
 
         fileChooser.connect('response', (dialog, responseId) => {
             if (responseId === Gtk.ResponseType.ACCEPT) {
-                let _path = dialog.get_file().get_path();
+                const _path = dialog.get_file().get_path();
                 settings.set_string(key, _path);
                 row.subtitle = `${_path !== '' ? _path : _('None')}`;
             }
@@ -249,7 +342,7 @@ function prefsRowVideoPath(window, prefsGroup) {
         return fileChooser;
     }
 
-    let button = new Adw.ButtonContent({
+    const button = new Adw.ButtonContent({
         icon_name: 'document-open-symbolic',
         label: _('Open'),
     });
@@ -258,7 +351,7 @@ function prefsRowVideoPath(window, prefsGroup) {
     row.add_suffix(button);
 
     row.connect('activated', () => {
-        let dialog = createDialog();
+        const dialog = createDialog();
         dialog.show();
     });
 }
@@ -273,7 +366,7 @@ function prefsRowDirectoryPath(window, prefsGroup) {
     const title = _('Change Wallpaper Directory Path');
     const key = 'change-wallpaper-directory-path';
 
-    let path = settings.get_string(key);
+    const path = settings.get_string(key);
     const row = new Adw.ActionRow({
         title,
         subtitle: `${path !== '' ? path : _('None')}`,
@@ -284,7 +377,7 @@ function prefsRowDirectoryPath(window, prefsGroup) {
      *
      */
     function createDialog() {
-        let fileChooser = new Gtk.FileChooserDialog({
+        const fileChooser = new Gtk.FileChooserDialog({
             title: _('Select Directory'),
             action: Gtk.FileChooserAction.SELECT_FOLDER,
         });
@@ -295,7 +388,7 @@ function prefsRowDirectoryPath(window, prefsGroup) {
 
         fileChooser.connect('response', (dialog, responseId) => {
             if (responseId === Gtk.ResponseType.ACCEPT) {
-                let _path = dialog.get_file().get_path();
+                const _path = dialog.get_file().get_path();
                 settings.set_string(key, _path);
                 row.subtitle = `${_path !== '' ? _path : _('None')}`;
             }
@@ -304,7 +397,7 @@ function prefsRowDirectoryPath(window, prefsGroup) {
         return fileChooser;
     }
 
-    let button = new Adw.ButtonContent({
+    const button = new Adw.ButtonContent({
         icon_name: 'document-open-symbolic',
         label: _('Open'),
     });
@@ -313,7 +406,7 @@ function prefsRowDirectoryPath(window, prefsGroup) {
     row.add_suffix(button);
 
     row.connect('activated', () => {
-        let dialog = createDialog();
+        const dialog = createDialog();
         dialog.show();
     });
 }
@@ -465,5 +558,41 @@ function prefsRowChangeWallpaperMode(window, prefsGroup) {
 
     row.connect('notify::selected', () => {
         settings.set_int('change-wallpaper-mode', row.selected);
+    });
+}
+
+/**
+ * Extension Load Time Display
+ *
+ * @param {Adw.PreferencesWindow} window AdwPreferencesWindow
+ * @param {Adw.PreferencesGroup} prefsGroup AdwPreferencesGroup
+ */
+function prefsRowLoadTime(window, prefsGroup) {
+    const settings = window._settings;
+    const title = _('Last Load Time');
+    const tooltip = _('Time taken to load the extension in milliseconds (lower is better)');
+
+    let loadTime = settings.get_double('last-load-time');
+    const subtitle = loadTime > 0
+        ? _(`${loadTime.toFixed(2)}ms`)
+        : _('Not yet measured');
+
+    const row = new Adw.ActionRow({
+        title,
+        subtitle,
+    });
+
+    if (tooltip)
+        row.set_tooltip_markup(tooltip);
+
+
+    prefsGroup.add(row);
+
+    // Update display when load time changes
+    settings.connect('changed::last-load-time', () => {
+        loadTime = settings.get_double('last-load-time');
+        row.subtitle = loadTime > 0
+            ? `${loadTime.toFixed(2)}ms`
+            : _('Not yet measured');
     });
 }

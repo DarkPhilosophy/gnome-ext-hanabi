@@ -89,8 +89,8 @@ class ManagedWindow {
         // Workaround a weird behavior in MetaSurfaceContainerActorWayland,
         // which sets the position x, y to (child_actor_width - surfaces_width)/2, (child_actor_height - surfaces_height)/2 when the window is minimized.
         // Ref: https://gitlab.gnome.org/GNOME/mutter/-/blob/b59fb7c08c7e8c7f5de493602154e4341f867835/src/compositor/meta-window-actor-wayland.c#L526
-        let windowActor = window.get_compositor_private();
-        let surfaceContainer = windowActor.get_children().find(
+        const windowActor = window.get_compositor_private();
+        const surfaceContainer = windowActor.get_children().find(
             child => GObject.type_name(child) === 'MetaSurfaceContainerActorWayland'
         );
         if (surfaceContainer) {
@@ -160,9 +160,9 @@ export class WindowManager {
                     this.addWindow(window);
 
                 if (this._isX11) {
-                    let appid = window.get_gtk_application_id();
-                    let windowpid = window.get_pid();
-                    let mypid = this._waylandClient.query_pid_of_program();
+                    const appid = window.get_gtk_application_id();
+                    const windowpid = window.get_pid();
+                    const mypid = this._waylandClient.query_pid_of_program();
                     if (appid === applicationId && windowpid === mypid)
                         this.addWindow(window);
                 }
@@ -185,6 +185,9 @@ export class WindowManager {
             // MetaWindowActor => MetaWindow
             window = window.get_meta_window();
         }
+
+        if (window.managed)
+            this._clearWindow(window);
 
         window.managed = new ManagedWindow(window);
         this._windows.add(window);

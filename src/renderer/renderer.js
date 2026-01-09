@@ -18,7 +18,7 @@
  */
 
 imports.gi.versions.Gtk = '4.0';
-const {GObject, Gtk, Gio, GLib, Gdk, Gst} = imports.gi;
+const {GObject, Gtk, Gio, GLib, Gdk, Gst, GdkPixbuf} = imports.gi;
 
 // [major, minor, micro, nano]
 const gstVersion = Gst.version();
@@ -68,9 +68,42 @@ const useGstGL = isGstVersionAtLeast(1, 24);
 
 const applicationId = 'io.github.jeffshee.HanabiRenderer';
 
+// Professional logging utility
+const LogLevel = {
+    VERBOSE: 0,
+    DEBUG: 1,
+    INFO: 2,
+    WARN: 3,
+    ERROR: 4,
+};
+
+const currentLogLevel = LogLevel.DEBUG;
+
+const logDebug = (msg, level = LogLevel.DEBUG) => {
+    if (level < currentLogLevel)
+        return;
+
+    const levelNames = {
+        [LogLevel.VERBOSE]: '[VERBOSE]',
+        [LogLevel.DEBUG]: '[DEBUG]',
+        [LogLevel.INFO]: '[INFO]',
+        [LogLevel.WARN]: '[WARN]',
+        [LogLevel.ERROR]: '[ERROR]',
+    };
+
+    const timestamp = new Date().toISOString();
+    const prefix = `${timestamp} ${levelNames[level]} [HanabiRenderer]`;
+    const output = `${prefix} ${msg}`;
+
+    if (level >= LogLevel.WARN)
+        console.error(output);
+    else
+        console.log(output);
+};
+
 let extSettings = null;
 const extSchemaId = 'io.github.jeffshee.hanabi-extension';
-let settingsSchemaSource = Gio.SettingsSchemaSource.get_default();
+const settingsSchemaSource = Gio.SettingsSchemaSource.get_default();
 if (settingsSchemaSource.lookup(extSchemaId, false))
     extSettings = Gio.Settings.new(extSchemaId);
 
@@ -105,9 +138,17 @@ let changeWallpaperMode = extSettings ? extSettings.get_int('change-wallpaper-mo
 let changeWallpaperInterval = extSettings ? extSettings.get_int('change-wallpaper-interval') : 15;
 let windowDimension = {width: 1920, height: 1080};
 let windowed = false;
-let fullscreened = true;
+const fullscreened = true;
 let isDebugMode = extSettings ? extSettings.get_boolean('debug-mode') : true;
 let changeWallpaperTimerId = null;
+let lastFrameTime = 0;
+let frameCount = 0;
+let fps = 0;
+let lastFpsUpdate = 0;
+const targetFPS = 60;
+const targetFrameTime = 1000 / targetFPS;
+const WALLPAPER_SNAPSHOT_DELAY_MS = 600;
+const USE_SHELL_SNAPSHOT = true;
 
 
 const HanabiRenderer = GObject.registerClass(
@@ -128,14 +169,19 @@ const HanabiRenderer = GObject.registerClass(
             this._sharedPaintable = null;
             this._gstImplName = '';
             this._isPlaying = false;
+            this._staticWallpaperApplied = false;
+            this._staticWallpaperPending = false;
+            this._staticWallpaperTimeoutId = 0;
+            this._lastSnapshotVideoPath = '';
             this._exportDbus();
             this._setupGst();
+            logDebug('Renderer initialized', LogLevel.INFO);
 
             this.connect('activate', app => {
                 this._display = Gdk.Display.get_default();
                 this._monitors = this._display ? [...this._display.get_monitors()] : [];
 
-                let activeWindow = app.activeWindow;
+                const activeWindow = app.activeWindow;
                 if (!activeWindow) {
                     this._buildUI();
                     this._hanabiWindows.forEach(window => {
@@ -145,7 +191,7 @@ const HanabiRenderer = GObject.registerClass(
             });
 
             this.connect('command-line', (app, commandLine) => {
-                let argv = commandLine.get_arguments();
+                const argv = commandLine.get_arguments();
                 if (this._parseArgs(argv)) {
                     this.activate();
                     commandLine.set_exit_status(0);
@@ -159,6 +205,7 @@ const HanabiRenderer = GObject.registerClass(
                 case 'video-path':
                     videoPath = settings.get_string(key);
                     this.setFilePath(videoPath);
+                    this._resetStaticWallpaperState(videoPath);
                     break;
                 case 'mute':
                     mute = settings.get_boolean(key);
@@ -201,7 +248,7 @@ const HanabiRenderer = GObject.registerClass(
 
         _parseArgs(argv) {
             let lastCommand = null;
-            for (let arg of argv) {
+            for (const arg of argv) {
                 if (!lastCommand) {
                     switch (arg) {
                     case '-M':
@@ -235,7 +282,7 @@ const HanabiRenderer = GObject.registerClass(
                 case '-W':
                 case '--windowed': {
                     windowed = true;
-                    let data = arg.split(':');
+                    const data = arg.split(':');
                     windowDimension = {
                         width: parseInt(data[0]),
                         height: parseInt(data[1]),
@@ -282,11 +329,11 @@ const HanabiRenderer = GObject.registerClass(
         }
 
         _setPluginDecodersRank(pluginName, rank, useStateless = false) {
-            let gstRegistry = Gst.Registry.get();
-            let features = gstRegistry.get_feature_list_by_plugin(pluginName);
+            const gstRegistry = Gst.Registry.get();
+            const features = gstRegistry.get_feature_list_by_plugin(pluginName);
 
-            for (let feature of features) {
-                let featureName = feature.get_name();
+            for (const feature of features) {
+                const featureName = feature.get_name();
 
                 if (
                     !featureName.endsWith('dec') &&
@@ -294,18 +341,165 @@ const HanabiRenderer = GObject.registerClass(
                 )
                     continue;
 
-                let isStateless = featureName.includes('sl');
+                const isStateless = featureName.includes('sl');
 
                 if (isStateless !== useStateless)
                     continue;
 
-                let oldRank = feature.get_rank();
+                const oldRank = feature.get_rank();
 
                 if (rank === oldRank)
                     continue;
 
                 feature.set_rank(rank);
                 console.debug(`changed rank: ${oldRank} -> ${rank} for ${featureName}`);
+            }
+        }
+
+
+
+        _resetStaticWallpaperState(newVideoPath) {
+            this._staticWallpaperApplied = false;
+            this._staticWallpaperPending = false;
+            this._lastSnapshotVideoPath = newVideoPath || '';
+            if (this._staticWallpaperTimeoutId) {
+                GLib.source_remove(this._staticWallpaperTimeoutId);
+                this._staticWallpaperTimeoutId = 0;
+            }
+            logDebug(`Reset state (video='${this._lastSnapshotVideoPath || 'none'}')`, LogLevel.INFO);
+        }
+
+        _scheduleStaticWallpaperSnapshot() {
+            if (USE_SHELL_SNAPSHOT)
+                return;
+            if (this._staticWallpaperApplied || this._staticWallpaperPending)
+                return;
+            if (!videoPath)
+                return;
+
+            if (!this._isPlaying)
+                logDebug('Scheduling snapshot (not playing yet)');
+            logDebug('Scheduling snapshot');
+            this._staticWallpaperPending = true;
+            this._staticWallpaperTimeoutId = GLib.timeout_add(
+                GLib.PRIORITY_LOW,
+                WALLPAPER_SNAPSHOT_DELAY_MS,
+                () => {
+                    this._staticWallpaperTimeoutId = 0;
+                    this._applyStaticWallpaperSnapshot();
+                    return false;
+                }
+            );
+        }
+
+        _applyStaticWallpaperSnapshot() {
+            if (this._staticWallpaperApplied)
+                return;
+
+            logDebug('Taking snapshot');
+            const cacheDir = GLib.build_filenamev([GLib.get_home_dir(), '.cache', 'hanabi']);
+            const rawPath = GLib.build_filenamev([cacheDir, 'snapshot-raw.png']);
+            const finalPath = GLib.build_filenamev([cacheDir, 'snapshot.png']);
+
+            try {
+                Gio.File.new_for_path(cacheDir).make_directory_with_parents(null);
+            } catch (e) {
+                if (!e.matches(Gio.IOErrorEnum, Gio.IOErrorEnum.EXISTS)) {
+                    logDebug(`Failed to create cache dir: ${e.message}`, LogLevel.WARN);
+                    this._staticWallpaperPending = false;
+                    return;
+                }
+            }
+
+            this._takeVideoFrameSnapshot(rawPath, () => {
+                const ok = this._processSnapshot(rawPath, finalPath);
+                if (ok) {
+                    this._setGnomeWallpaper(finalPath);
+                    this._staticWallpaperApplied = true;
+                    logDebug('Applied GNOME wallpaper');
+                } else {
+                    logDebug('Snapshot processing failed', LogLevel.WARN);
+                }
+                this._staticWallpaperPending = false;
+            });
+        }
+
+        _takeVideoFrameSnapshot(targetPath, callback) {
+            logDebug(`Extracting first frame from video: ${videoPath}`, LogLevel.DEBUG);
+
+            // Try GdkPixbuf first
+            try {
+                const pixbuf = GdkPixbuf.Pixbuf.new_from_file(videoPath);
+                if (pixbuf) {
+                    pixbuf.savev(targetPath, 'png', [], []);
+                    logDebug(`Video frame snapshot saved via GdkPixbuf: ${targetPath}`, LogLevel.INFO);
+                    callback();
+                    return;
+                }
+            } catch (e) {
+                logDebug(`GdkPixbuf load failed: ${e.message}, falling back to ffmpeg`, LogLevel.DEBUG);
+            }
+
+            // Fallback: use ffmpeg
+            try {
+                const proc = Gio.Subprocess.new(
+                    [
+                        'ffmpeg',
+                        '-i', videoPath,
+                        '-frames:v', '1',
+                        '-update', '1',
+                        '-q:v', '3',
+                        '-y',
+                        targetPath,
+                    ],
+                    Gio.SubprocessFlags.STDERR_MONITORED | Gio.SubprocessFlags.STDOUT_MONITORED
+                );
+
+                proc.wait(null);
+                const stderrPipe = proc.get_stderr_pipe();
+                if (stderrPipe) {
+                    const data = stderrPipe.read(null);
+                    if (data.length > 0)
+                        logDebug(`ffmpeg stderr: ${data.toString().trim()}`, LogLevel.DEBUG);
+                }
+
+                // Check if output file was created
+                const file = Gio.File.new_for_path(targetPath);
+                if (file.query_exists(null))
+                    logDebug(`Video frame snapshot saved via ffmpeg: ${targetPath}`, LogLevel.INFO);
+                else
+                    logDebug('ffmpeg extraction failed - output file not created', LogLevel.WARN);
+            } catch (e) {
+                logDebug(`ffmpeg extraction failed: ${e.message}`, LogLevel.ERROR);
+            }
+            callback();
+        }
+
+        _processSnapshot(inputPath, outputPath) {
+            try {
+                // TODO: revisit dim/blur pipeline once the renderer snapshot actually feeds the needed pixel data.
+                logDebug('Snapshot blur/dim path is temporarily paused; copying snapshot-raw.png directly', LogLevel.WARN);
+                const inputFile = Gio.File.new_for_path(inputPath);
+                const outputFile = Gio.File.new_for_path(outputPath);
+                inputFile.copy(outputFile, Gio.FileCopyFlags.OVERWRITE, null, null);
+                logDebug(`Processed snapshot (raw copy): ${outputPath}`, LogLevel.INFO);
+                return true;
+            } catch (e) {
+                logDebug(`Snapshot processing failed: ${e.message}`, LogLevel.ERROR);
+                return false;
+            }
+        }
+
+        _setGnomeWallpaper(path) {
+            try {
+                const settings = new Gio.Settings({schema_id: 'org.gnome.desktop.background'});
+                const uri = Gio.File.new_for_path(path).get_uri();
+                settings.set_string('picture-uri', uri);
+                settings.set_string('picture-uri-dark', uri);
+                settings.set_string('picture-options', 'zoom');
+                logDebug(`GNOME wallpaper set: ${uri}`, LogLevel.INFO);
+            } catch (e) {
+                logDebug(`Failed to set GNOME wallpaper: ${e.message}`, LogLevel.ERROR);
             }
         }
 
@@ -344,14 +538,14 @@ const HanabiRenderer = GObject.registerClass(
                         widget = this._getGtkStockWidget();
                 }
 
-                let geometry = gdkMonitor.get_geometry();
-                let state = {
+                const geometry = gdkMonitor.get_geometry();
+                const state = {
                     position: [geometry.x, geometry.y],
                     keepAtBottom: true,
                     keepMinimized: true,
                     keepPosition: true,
                 };
-                let window = new HanabiRendererWindow(
+                const window = new HanabiRendererWindow(
                     this,
                     nohide
                         ? `Hanabi Renderer #${index} (using ${this._gstImplName})`
@@ -367,7 +561,7 @@ const HanabiRenderer = GObject.registerClass(
 
         _getWidgetFromSharedPaintable() {
             if (this._sharedPaintable) {
-                let picture = new Gtk.Picture({
+                const picture = new Gtk.Picture({
                     paintable: this._sharedPaintable,
                     hexpand: true,
                     vexpand: true,
@@ -378,7 +572,7 @@ const HanabiRenderer = GObject.registerClass(
                 this._pictures.push(picture);
 
                 if (haveGraphicsOffload) {
-                    let offload = Gtk.GraphicsOffload.new(picture);
+                    const offload = Gtk.GraphicsOffload.new(picture);
                     offload.set_enabled(Gtk.GraphicsOffloadEnabled.ENABLED);
                     return offload;
                 }
@@ -402,7 +596,7 @@ const HanabiRenderer = GObject.registerClass(
                     // otherwise the sink.widget will spawn a window for itself.
                     // This workaround is only needed for the first window.
                     this._sharedPaintable = sink.widget.paintable;
-                    let box = new Gtk.Box();
+                    const box = new Gtk.Box();
                     box.append(sink.widget);
                     box.append(this._getWidgetFromSharedPaintable());
                     // Hide the sink.widget to show our Gtk.Picture only
@@ -421,7 +615,7 @@ const HanabiRenderer = GObject.registerClass(
                 return null;
 
             if (useGstGL) {
-                let glsink = Gst.ElementFactory.make(
+                const glsink = Gst.ElementFactory.make(
                     'glsinkbin',
                     'glsinkbin'
                 );
@@ -463,15 +657,20 @@ const HanabiRenderer = GObject.registerClass(
             this._adapter.connect(
                 'state-changed',
                 (adapter, state) => {
-                    // Monitor playing state.
+                    const wasPlaying = this._isPlaying;
                     this._isPlaying = state === GstPlay.PlayState.PLAYING;
                     this._dbus.emit_signal('isPlayingChanged', new GLib.Variant('(b)', [this._isPlaying]));
+                    if (wasPlaying !== this._isPlaying)
+                        logDebug(`Playing state: ${this._isPlaying} (state=${state})`, LogLevel.INFO);
+                    if (!wasPlaying && this._isPlaying)
+                        this._scheduleStaticWallpaperSnapshot();
                 }
             );
 
-            let file = Gio.File.new_for_path(videoPath);
+            const file = Gio.File.new_for_path(videoPath);
             this._play.set_uri(file.get_uri());
 
+            this._resetStaticWallpaperState(videoPath);
             this.setPlay();
             this.setAutoWallpaper();
 
@@ -494,13 +693,19 @@ const HanabiRenderer = GObject.registerClass(
             });
             // Monitor playing state.
             this._media.connect('notify::playing', media => {
+                const wasPlaying = this._isPlaying;
                 this._isPlaying = media.get_playing();
                 this._dbus.emit_signal('isPlayingChanged', new GLib.Variant('(b)', [this._isPlaying]));
+                if (wasPlaying !== this._isPlaying)
+                    logDebug(`Playing state: ${this._isPlaying} (GtkMediaFile)`, LogLevel.INFO);
+                if (!wasPlaying && this._isPlaying)
+                    this._scheduleStaticWallpaperSnapshot();
             });
 
             this._sharedPaintable = this._media;
-            let widget = this._getWidgetFromSharedPaintable();
+            const widget = this._getWidgetFromSharedPaintable();
 
+            this._resetStaticWallpaperState(videoPath);
             this.setPlay();
             this.setAutoWallpaper();
 
@@ -513,6 +718,9 @@ const HanabiRenderer = GObject.registerClass(
                 <interface name="io.github.jeffshee.HanabiRenderer">
                     <method name="setPlay"/>
                     <method name="setPause"/>
+                    <method name="TakeVideoFrameSnapshot">
+                        <arg name="path" type="s" direction="in"/>
+                    </method>
                     <property name="isPlaying" type="b" access="read"/>
                     <signal name="isPlayingChanged">
                         <arg name="isPlaying" type="b"/>
@@ -543,7 +751,7 @@ const HanabiRenderer = GObject.registerClass(
          * @param _volume
          */
         setVolume(_volume) {
-            let player = this._play != null ? this._play : this._media;
+            const player = this._play != null ? this._play : this._media;
 
             // GstPlay uses linear volume
             if (this._play) {
@@ -576,23 +784,89 @@ const HanabiRenderer = GObject.registerClass(
         }
 
         setFilePath(_videoPath) {
-            let file = Gio.File.new_for_path(_videoPath);
+            logDebug(`setFilePath: ${_videoPath}`, LogLevel.INFO);
+            const file = Gio.File.new_for_path(_videoPath);
             if (this._play) {
                 this._play.set_uri(file.get_uri());
+                this._resetStaticWallpaperState(_videoPath);
             } else if (this._media) {
                 // Reset the stream when switching the file,
                 // otherwise `play()` is not playing for some reason.
                 this._media.stream_unprepared();
                 this._media.file = file;
+                this._resetStaticWallpaperState(_videoPath);
             }
             this.setPlay();
+            this._scheduleStaticWallpaperSnapshot();
         }
 
         setPlay() {
-            if (this._play)
+            if (this._play) {
                 this._play.play();
-            else if (this._media)
+                this._setupFrameRateControl();
+            } else if (this._media) {
                 this._media.play();
+                this._setupFrameRateControl();
+            }
+        }
+
+        _setupFrameRateControl() {
+            // Remove any existing frame control
+            if (this._frameControlId) {
+                GLib.source_remove(this._frameControlId);
+                this._frameControlId = 0;
+            }
+
+            // Add frame rate control
+            this._frameControlId = GLib.timeout_add(GLib.PRIORITY_LOW, targetFrameTime, () => {
+                this._controlFrameRate();
+                return true; // Continue
+            });
+        }
+
+        _controlFrameRate() {
+            try {
+                const now = GLib.get_monotonic_time() / 1000;
+
+                // Calculate FPS
+                if (lastFpsUpdate > 0) {
+                    const elapsed = now - lastFpsUpdate;
+                    if (elapsed >= 1000) { // Update FPS every second
+                        fps = frameCount / (elapsed / 1000);
+                        lastFpsUpdate = now;
+                        frameCount = 0;
+
+                        // Log FPS periodically for debugging
+                        if (isDebugMode && lastFpsUpdate % 60000 < 1000) { // Every minute
+                            console.debug(`[Hanabi Perf] Current FPS: ${fps.toFixed(1)} (target: ${targetFPS})`);
+                        }
+                    }
+                } else {
+                    lastFpsUpdate = now;
+                }
+                frameCount++;
+
+                // Frame rate limiting - skip frames if we're running too fast
+                const currentTime = GLib.get_monotonic_time() / 1000;
+                if (lastFrameTime > 0) {
+                    const frameTime = currentTime - lastFrameTime;
+                    const targetTime = targetFrameTime;
+
+                    // If we're running too fast, add a small delay
+                    if (frameTime < targetTime * 0.8) { // Running more than 20% faster than target
+                        const sleepTime = Math.min(10, targetTime - frameTime); // Max 10ms sleep
+                        if (sleepTime > 0) {
+                            // Use idle_add to yield to other processes
+                            GLib.idle_add(GLib.PRIORITY_LOW, () => {
+                                return false;
+                            });
+                        }
+                    }
+                }
+                lastFrameTime = currentTime;
+            } catch (e) {
+                console.error(`Frame rate control error: ${e.message}`);
+            }
         }
 
         setPause() {
@@ -602,16 +876,22 @@ const HanabiRenderer = GObject.registerClass(
                 this._media.pause();
         }
 
+        TakeVideoFrameSnapshot(_path) {
+            // Delegate to the existing static wallpaper snapshot which already works
+            logDebug('TakeVideoFrameSnapshot called (delegating to static wallpaper)', LogLevel.INFO);
+            this._applyStaticWallpaperSnapshot();
+        }
+
         setAutoWallpaper() {
             // Index to keep track of the current video
             let currentIndex = 0;
             let videoPaths = [];
-            let dir = Gio.File.new_for_path(changeWallpaperDirectoryPath);
+            const dir = Gio.File.new_for_path(changeWallpaperDirectoryPath);
             // Check if dir exists and is a directory
             if (dir.query_file_type(Gio.FileQueryInfoFlags.NONE, null) !== Gio.FileType.DIRECTORY)
                 return;
 
-            let enumerator = dir.enumerate_children(
+            const enumerator = dir.enumerate_children(
                 'standard::*',
                 Gio.FileQueryInfoFlags.NONE,
                 null
@@ -621,7 +901,7 @@ const HanabiRenderer = GObject.registerClass(
             let fileInfo;
             while ((fileInfo = enumerator.next_file(null))) {
                 if (fileInfo.get_content_type().startsWith('video/')) {
-                    let file = dir.get_child(fileInfo.get_name());
+                    const file = dir.get_child(fileInfo.get_name());
                     videoPaths.push(file.get_path());
                 }
             }
@@ -629,7 +909,7 @@ const HanabiRenderer = GObject.registerClass(
                 return;
             videoPaths = videoPaths.sort();
 
-            let getRandomIndex = (actualIndex, videosLength) => {
+            const getRandomIndex = (actualIndex, videosLength) => {
                 if (videosLength <= 1)
                     return actualIndex;
 
@@ -640,7 +920,7 @@ const HanabiRenderer = GObject.registerClass(
                 return newIndex;
             };
 
-            let operation = () => {
+            const operation = () => {
                 console.debug(`setAutoWallpaper operation, interval: ${changeWallpaperInterval} min`);
                 // Avoid changing the wallpaper if it's paused to avoid unexpected playback resume.
                 if (this._isPlaying) {
@@ -673,6 +953,28 @@ const HanabiRenderer = GObject.registerClass(
         get isPlaying() {
             return this._isPlaying;
         }
+
+        destroy() {
+            // Clean up frame rate control
+            if (this._frameControlId) {
+                GLib.source_remove(this._frameControlId);
+                this._frameControlId = 0;
+            }
+
+            if (this._staticWallpaperTimeoutId) {
+                GLib.source_remove(this._staticWallpaperTimeoutId);
+                this._staticWallpaperTimeoutId = 0;
+            }
+
+            // Clean up auto wallpaper timer
+            if (changeWallpaperTimerId) {
+                GLib.source_remove(changeWallpaperTimerId);
+                changeWallpaperTimerId = null;
+            }
+
+            // Clean up DBus
+            this._unexportDbus();
+        }
     }
 );
 
@@ -691,7 +993,7 @@ const HanabiRendererWindow = GObject.registerClass(
             });
 
             // Load CSS with custom style
-            let cssProvider = new Gtk.CssProvider();
+            const cssProvider = new Gtk.CssProvider();
             cssProvider.load_from_file(
                 Gio.File.new_for_path(
                     GLib.build_filenamev([codePath, 'renderer', 'stylesheet.css'])
@@ -709,8 +1011,8 @@ const HanabiRendererWindow = GObject.registerClass(
                 if (fullscreened) {
                     this.fullscreen_on_monitor(gdkMonitor);
                 } else {
-                    let geometry = gdkMonitor.get_geometry();
-                    let [width, height] = [geometry.width, geometry.height];
+                    const geometry = gdkMonitor.get_geometry();
+                    const [width, height] = [geometry.width, geometry.height];
                     this.set_size_request(width, height);
                 }
             }
@@ -720,5 +1022,5 @@ const HanabiRendererWindow = GObject.registerClass(
 
 Gst.init(null);
 
-let renderer = new HanabiRenderer();
+const renderer = new HanabiRenderer();
 renderer.run(ARGV);

@@ -65,12 +65,6 @@ See also the section [Troubleshooting](#troubleshooting), for version-specific k
 4. Enable the Hanabi extension
 5. Choose your video wallpaper in the extension preference window
 
-### Distro-specific Guides
-
--   [Installation Guide for Ubuntu/Pop!\_OS 22.04](docs/ubuntu-22-04.md)
--   [Installation Guide for Ubuntu 23.04](docs/ubuntu-23-04.md)
--   [Installation Guide for openSUSE Tumbleweed](docs/opensuse-tumbleweed.md)
-
 ### Troubleshooting
 
 1. The video doesn't play / The extension is enabled but nothing happens  
@@ -108,11 +102,6 @@ For this to work, Clapper must be installed **from the package manager and not f
     ![](https://user-images.githubusercontent.com/25530920/190872366-7fce5703-2310-4c68-81c7-f17a8a15019f.png)
 
 </details>
-
-## Advanced Customization
-
-For more advanced customization, learn how to write scripts for Hanabi extension!  
-Check out the [scripting guide](docs/scripting.md) for detailed instructions and examples.
 
 ## Get Involved 🚀
 

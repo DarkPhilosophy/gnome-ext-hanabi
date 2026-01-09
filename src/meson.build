@@ -18,9 +18,11 @@ sources = [
   'launcher.js',
   'logger.js',
   'panelMenu.js',
+  'performance.js',
   'playbackState.js',
   'prefs.js',
   'roundedCornersEffect.js',
+  'snapshot.js',
   'wallpaper.js',
   'windowManager.js',
 ]

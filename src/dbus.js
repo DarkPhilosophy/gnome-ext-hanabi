@@ -30,16 +30,19 @@ export class RendererWrapper {
 
     createProxy() {
         const interfaceXml = `
-        <node>
-            <interface name="io.github.jeffshee.HanabiRenderer">
-                <method name="setPlay"/>
-                <method name="setPause"/>
-                <property name="isPlaying" type="b" access="read"/>
-                <signal name="isPlayingChanged">
-                    <arg name="isPlaying" type="b"/>
-                </signal>
-            </interface>
-        </node>`;
+         <node>
+             <interface name="io.github.jeffshee.HanabiRenderer">
+                 <method name="setPlay"/>
+                 <method name="setPause"/>
+                 <method name="TakeVideoFrameSnapshot">
+                     <arg name="path" type="s" direction="in"/>
+                 </method>
+                 <property name="isPlaying" type="b" access="read"/>
+                 <signal name="isPlayingChanged">
+                     <arg name="isPlaying" type="b"/>
+                 </signal>
+             </interface>
+         </node>`;
         const DBUS_BUS_NAME = 'io.github.jeffshee.HanabiRenderer';
         const DBUS_OBJECT_PATH = '/io/github/jeffshee/HanabiRenderer';
         const DBusProxy = Gio.DBusProxy.makeProxyWrapper(interfaceXml);

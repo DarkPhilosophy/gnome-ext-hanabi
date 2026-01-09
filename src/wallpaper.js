@@ -30,6 +30,8 @@ const applicationId = 'io.github.jeffshee.HanabiRenderer';
 const logger = new Logger.Logger();
 // Ref: https://gitlab.gnome.org/GNOME/gnome-shell/-/blob/main/js/ui/layout.js
 const BACKGROUND_FADE_ANIMATION_TIME = 1000;
+const APPLY_COOLDOWN_US = 750 * 1000;
+let lastApplyAttemptUs = 0;
 
 // const CUSTOM_BACKGROUND_BOUNDS_PADDING = 2;
 
@@ -62,7 +64,7 @@ export const LiveWallpaper = GObject.registerClass(
             this._monitorScale = this._display.get_monitor_scale(
                 this._monitorIndex
             );
-            let {width, height} =
+            const {width, height} =
                 Main.layoutManager.monitors[this._monitorIndex];
             this._monitorWidth = width;
             this._monitorHeight = height;
@@ -115,10 +117,43 @@ export const LiveWallpaper = GObject.registerClass(
         }
 
         _applyWallpaper() {
+            if (this._wallpaper)
+                return;
+
+
+            // Debounce: cancel previous attempt if in progress
+            if (this._applyWallpaperId) {
+                GLib.source_remove(this._applyWallpaperId);
+                this._applyWallpaperId = 0;
+            }
+
+            const nowUs = GLib.get_monotonic_time();
+            const sinceLastUs = nowUs - lastApplyAttemptUs;
+            if (sinceLastUs < APPLY_COOLDOWN_US) {
+                const delayMs = Math.ceil((APPLY_COOLDOWN_US - sinceLastUs) / 1000);
+                this._applyWallpaperId = GLib.timeout_add(
+                    GLib.PRIORITY_LOW,
+                    delayMs,
+                    () => {
+                        this._applyWallpaperId = 0;
+                        this._applyWallpaper();
+                        return false;
+                    }
+                );
+                return;
+            }
+            lastApplyAttemptUs = nowUs;
+
             logger.debug('Applying wallpaper...');
+            this._applyWallpaperRetries = 0;
+            const MAX_RETRIES = 50; // Max 5 seconds (50 * 100ms)
             const operation = () => {
                 const renderer = this._getRenderer();
                 if (renderer) {
+                    if (this._wallpaper) {
+                        this._applyWallpaperId = 0;
+                        return false;
+                    }
                     this._wallpaper = new Clutter.Clone({
                         source: renderer,
                         // The point around which the scaling and rotation transformations occur.
@@ -131,16 +166,32 @@ export const LiveWallpaper = GObject.registerClass(
                     this._fade();
                     logger.debug('Wallpaper applied');
                     // Stop the timeout.
+                    this._applyWallpaperId = 0;
                     return false;
                 } else {
+                    this._applyWallpaperRetries++;
+                    if (this._applyWallpaperRetries >= MAX_RETRIES) {
+                        logger.warn(`Failed to apply wallpaper after ${MAX_RETRIES} retries`);
+                        this._applyWallpaperId = 0;
+                        return false; // Give up
+                    }
                     // Keep waiting.
                     return true;
                 }
             };
 
             // Perform intial operation without timeout
-            if (operation())
-                GLib.timeout_add(GLib.PRIORITY_DEFAULT, 100, operation);
+            if (operation()) {
+                this._applyWallpaperId = GLib.timeout_add(GLib.PRIORITY_DEFAULT, 100, operation);
+
+                // Cleanup on destroy
+                this.connect('destroy', () => {
+                    if (this._applyWallpaperId) {
+                        GLib.source_remove(this._applyWallpaperId);
+                        this._applyWallpaperId = 0;
+                    }
+                });
+            }
         }
 
         _getRenderer() {
@@ -158,7 +209,7 @@ export const LiveWallpaper = GObject.registerClass(
                 );
             };
 
-            let renderer = findRenderer(this._monitorIndex);
+            const renderer = findRenderer(this._monitorIndex);
 
             return renderer ? renderer : null;
         }

@@ -136,10 +136,28 @@ const PauseOnMaximizeOrFullscreenModule = GObject.registerClass(
 
         _windowAdded(metaWindow, doUpdate = true) {
             // Not need to track renderer window or skip taskbar window
-            if (metaWindow.title?.includes(applicationId) | metaWindow.skip_taskbar)
+            if (metaWindow.title?.includes(applicationId) || metaWindow.skip_taskbar)
                 return;
 
-            let signals = [];
+            // Ignore Desktop and Dock windows (e.g. DING, Dash to Dock)
+            // This fixes conflict with desktop-icons-ng which creates a fullscreen desktop window
+            if (metaWindow.get_window_type() === Meta.WindowType.DESKTOP ||
+                metaWindow.get_window_type() === Meta.WindowType.DOCK) {
+                this._logger.debug(`Ignoring Desktop/Dock window: ${metaWindow.title}`);
+                return;
+            }
+
+            // Ignore DING (Desktop Icons NG) windows by title pattern and class
+            if (metaWindow.title?.startsWith('@!') ||
+                metaWindow.get_wm_class() === 'com.desktop.ding' ||
+                metaWindow.get_wm_class() === 'com.desktop.dingtest') {
+                this._logger.debug(`Ignoring DING window: ${metaWindow.title}`);
+                return;
+            }
+
+            this._logger.debug(`Window check: Title='${metaWindow.title}' Class='${metaWindow.get_wm_class()}' Type=${metaWindow.get_window_type()} MaxFlags=${metaWindow.get_maximize_flags()} Fullscreen=${metaWindow.fullscreen}`);
+
+            const signals = [];
             signals.push(
                 metaWindow.connect('notify::maximized-horizontally', () => {
                     this._logger.debug('maximized-horizontally changed');
@@ -167,7 +185,7 @@ const PauseOnMaximizeOrFullscreenModule = GObject.registerClass(
                     signals,
                 }
             );
-            this._logger.debug(`Window ${metaWindow.title} added`);
+            this._logger.debug(`Window ${metaWindow.title} (Type: ${metaWindow.get_window_type()}) added`);
             if (doUpdate)
                 this._update();
         }
@@ -217,7 +235,7 @@ const PauseOnMaximizeOrFullscreenModule = GObject.registerClass(
 
         _update() {
             // Filter out renderer windows and minimized windows
-            let metaWindows = this._windows.map(({metaWindow}) => metaWindow).filter(
+            const metaWindows = this._windows.map(({metaWindow}) => metaWindow).filter(
                 metaWindow => !metaWindow.title?.includes(applicationId) && !metaWindow.minimized
             );
 
@@ -226,7 +244,7 @@ const PauseOnMaximizeOrFullscreenModule = GObject.registerClass(
             this.states.maximizedOrFullscreenOnAnyMonitor = metaWindows.some(metaWindow =>
                 metaWindow.get_maximize_flags() === Meta.MaximizeFlags.BOTH || metaWindow.fullscreen);
 
-            let monitorsWithMaximizedOrFullscreen = metaWindows.reduce((acc, metaWindow) => {
+            const monitorsWithMaximizedOrFullscreen = metaWindows.reduce((acc, metaWindow) => {
                 if (metaWindow.get_maximize_flags() === Meta.MaximizeFlags.BOTH || metaWindow.fullscreen)
                     acc[metaWindow.get_monitor()] = true;
                 return acc;
@@ -308,8 +326,9 @@ const PauseOnBatteryModule = GObject.registerClass(
 
         enable() {
             this._upower.proxy.connect('g-properties-changed', (_proxy, properties) => {
-                let payload = properties.deep_unpack();
-                if (!payload.hasOwnProperty('State') && !payload.hasOwnProperty('Percentage'))
+                const payload = properties.deep_unpack();
+                if (!Object.prototype.hasOwnProperty.call(payload, 'State') &&
+                    !Object.prototype.hasOwnProperty.call(payload, 'Percentage'))
                     return;
                 this._logger.debug(`State ${payload.State}, Percentage ${payload.Percentage}`);
                 this._update();
@@ -319,8 +338,8 @@ const PauseOnBatteryModule = GObject.registerClass(
         }
 
         _update() {
-            let state = this._upower.getState();
-            let percentage = this._upower.getPercentage();
+            const state = this._upower.getState();
+            const percentage = this._upower.getPercentage();
 
             this.states.onBattery = state === UPower.DeviceState.PENDING_DISCHARGE || state === UPower.DeviceState.DISCHARGING;
             this.states.lowBattery = this.states.onBattery && percentage <= this.conditions.lowBatteryThreshold;
@@ -371,13 +390,13 @@ const PauseOnMprisPlayingModule = GObject.registerClass(
         }
 
         enable() {
-            let mprisNames = this._queryMprisNames();
+            const mprisNames = this._queryMprisNames();
             mprisNames.forEach(mprisName => {
                 this._logger.debug('Media Player found:', mprisName);
-                let mpris = new DBus.MprisWrapper(mprisName);
-                let playbackStatus = mpris.getPlaybackStatus();
-                let _mprisPropertiesChanged = this._mprisPropertiesChangedFactory(mprisName);
-                let mprisPropertiesChangedId = mpris.proxy.connect('g-properties-changed', _mprisPropertiesChanged);
+                const mpris = new DBus.MprisWrapper(mprisName);
+                const playbackStatus = mpris.getPlaybackStatus();
+                const _mprisPropertiesChanged = this._mprisPropertiesChangedFactory(mprisName);
+                const mprisPropertiesChangedId = mpris.proxy.connect('g-properties-changed', _mprisPropertiesChanged);
                 this._mediaPlayers[mprisName] = {
                     playbackStatus, mpris, mprisPropertiesChangedId,
                 };
@@ -386,20 +405,20 @@ const PauseOnMprisPlayingModule = GObject.registerClass(
 
             this._dbus.proxy.connectSignal('NameOwnerChanged', (_proxy, _sender, [name, oldOwner, newOwner]) => {
                 if (name.startsWith('org.mpris.MediaPlayer2.')) {
-                    let mprisName = name;
+                    const mprisName = name;
                     if (oldOwner === '') {
                         this._logger.debug('Media Player created:', mprisName);
-                        let mpris = new DBus.MprisWrapper(mprisName);
-                        let playbackStatus = mpris.getPlaybackStatus();
-                        let _mprisPropertiesChanged = this._mprisPropertiesChangedFactory(mprisName);
-                        let mprisPropertiesChangedId = mpris.proxy.connect('g-properties-changed', _mprisPropertiesChanged);
+                        const mpris = new DBus.MprisWrapper(mprisName);
+                        const playbackStatus = mpris.getPlaybackStatus();
+                        const _mprisPropertiesChanged = this._mprisPropertiesChangedFactory(mprisName);
+                        const mprisPropertiesChangedId = mpris.proxy.connect('g-properties-changed', _mprisPropertiesChanged);
                         this._mediaPlayers[mprisName] = {
                             playbackStatus, mpris, mprisPropertiesChangedId,
                         };
                     } else if (newOwner === '') {
                         this._logger.debug('Media Player destroyed:', mprisName);
-                        let mpris = this._mediaPlayers[mprisName].mpris;
-                        let mprisPropertiesChangedId = this._mediaPlayers[mprisName].mprisPropertiesChangedId;
+                        const mpris = this._mediaPlayers[mprisName].mpris;
+                        const mprisPropertiesChangedId = this._mediaPlayers[mprisName].mprisPropertiesChangedId;
                         mpris.proxy.disconnect(mprisPropertiesChangedId);
                         delete this._mediaPlayers[mprisName];
                     }
@@ -415,7 +434,7 @@ const PauseOnMprisPlayingModule = GObject.registerClass(
             try {
                 // let ret = this._dbus.listNames();
                 // let [names] =  ret.deep_unpack();
-                let [names] = this._dbus.listNames();
+                const [names] = this._dbus.listNames();
                 return names.filter(name => name.startsWith('org.mpris.MediaPlayer2.'));
             } catch (e) {
                 this._logger.error('Error:', e.message);
@@ -424,15 +443,15 @@ const PauseOnMprisPlayingModule = GObject.registerClass(
         }
 
         _mprisPropertiesChangedFactory(mprisName) {
-            let thisRef = this;
+            const thisRef = this;
             /**
              *
              * @param _proxy
              * @param properties
              */
             function _mprisPropertiesChanged(_proxy, properties) {
-                let payload = properties.deep_unpack();
-                if (!payload.hasOwnProperty('PlaybackStatus'))
+                const payload = properties.deep_unpack();
+                if (!Object.prototype.hasOwnProperty.call(payload, 'PlaybackStatus'))
                     return;
                 thisRef._mediaPlayers[mprisName].playbackStatus = payload.PlaybackStatus.deep_unpack();
                 thisRef._logger.debug(thisRef._stringifyMediaPlayers());
@@ -442,7 +461,7 @@ const PauseOnMprisPlayingModule = GObject.registerClass(
         }
 
         _stringifyMediaPlayers() {
-            let string = Object.entries(this._mediaPlayers).reduce((acc, [key, value]) => {
+            const string = Object.entries(this._mediaPlayers).reduce((acc, [key, value]) => {
                 acc[key] = {playbackStatus: value.playbackStatus};
                 return acc;
             }, {});
@@ -470,8 +489,8 @@ const PauseOnMprisPlayingModule = GObject.registerClass(
         disable() {
             Object.values(this._mediaPlayers).forEach(
                 mediaPlayer => {
-                    let mpris = mediaPlayer.mpris;
-                    let mprisPropertiesChangedId = mediaPlayer.mprisPropertiesChangedId;
+                    const mpris = mediaPlayer.mpris;
+                    const mprisPropertiesChangedId = mediaPlayer.mprisPropertiesChangedId;
                     mpris.proxy.disconnect(mprisPropertiesChangedId);
                 }
             );

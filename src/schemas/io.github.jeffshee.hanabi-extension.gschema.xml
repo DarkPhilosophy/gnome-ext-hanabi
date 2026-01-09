@@ -77,6 +77,24 @@
             <description>Enable printing debug messages to log</description>
         </key>
 
+        <key name="log-level" type="i">
+            <default>1</default>
+            <summary>Log Level</summary>
+            <description>Verbosity for debug logging: 0=Verbose, 1=Debug, 2=Info, 3=Warn, 4=Error.</description>
+        </key>
+
+        <key name="log-to-file" type="b">
+            <default>true</default>
+            <summary>Log to File</summary>
+            <description>When enabled, debug logs are written to a file.</description>
+        </key>
+
+        <key name="log-filepath" type="s">
+            <default>''</default>
+            <summary>Log File Path</summary>
+            <description>Path to write debug logs. Leave empty for default cache path.</description>
+        </key>
+
         <key name="enable-va" type="b">
             <default>false</default>
             <summary>Experimental VA Plugin</summary>
@@ -120,6 +138,12 @@
             <default>true</default>
             <summary>Show Panel Menu</summary>
             <description>Show the panel menu for the extension</description>
+        </key>
+
+        <key name="last-load-time" type="d">
+            <default>0.0</default>
+            <summary>Last Extension Load Time</summary>
+            <description>Last recorded extension load time in milliseconds</description>
         </key>
     </schema>
 </schemalist>

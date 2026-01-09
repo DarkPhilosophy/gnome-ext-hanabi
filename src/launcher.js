@@ -63,17 +63,29 @@ export class LaunchSubprocess {
 
         this._launcher = null;
         if (this.subprocess) {
-            // Read STDOUT and STDERR from the renderer
-            this._dataInputStream = Gio.DataInputStream.new(
-                this.subprocess.get_stdout_pipe()
-            );
-            this.read_output();
-            this.subprocess.wait_async(this.cancellable, () => {
+            // Read STDOUT and STDERR from the renderer with better error handling
+            try {
+                this._dataInputStream = Gio.DataInputStream.new(
+                    this.subprocess.get_stdout_pipe()
+                );
+                this.running = true;
+                this.read_output();
+                this.subprocess.wait_async(this.cancellable, () => {
+                    try {
+                        this.running = false;
+                        if (this._dataInputStream) {
+                            this._dataInputStream.close(null);
+                            this._dataInputStream = null;
+                        }
+                        this.cancellable = null;
+                    } catch (e) {
+                        logError(`Error in subprocess cleanup: ${e.message}`);
+                    }
+                });
+            } catch (e) {
+                logError(`Failed to initialize subprocess I/O: ${e.message}`);
                 this.running = false;
-                this._dataInputStream = null;
-                this.cancellable = null;
-            });
-            this.running = true;
+            }
         }
         return this.subprocess;
     }
@@ -83,26 +95,48 @@ export class LaunchSubprocess {
     }
 
     read_output() {
-        if (!this._dataInputStream)
+        if (!this._dataInputStream || !this.running)
             return;
 
-        this._dataInputStream.read_line_async(
-            GLib.PRIORITY_DEFAULT,
-            this.cancellable,
-            (object, res) => {
-                try {
-                    const [output, length] = object.read_line_finish_utf8(res);
-                    if (length)
-                        rendererLogger.log(output);
-                } catch (e) {
-                    if (e.matches(Gio.IOErrorEnum, Gio.IOErrorEnum.CANCELLED))
-                        return;
-                    logger.trace(e);
-                }
+        try {
+            this._dataInputStream.read_line_async(
+                GLib.PRIORITY_LOW, // Use lower priority to avoid blocking UI
+                this.cancellable,
+                (object, res) => {
+                    try {
+                        const [output, length] = object.read_line_finish_utf8(res);
+                        if (length && output) {
+                            const isSnapshotLine = output.includes('Hanabi Snapshot');
+                            // Optimized: Use array instead of string concatenation
+                            this._outputLines = this._outputLines || [];
+                            this._outputLines.push(output);
 
-                this.read_output();
-            }
-        );
+                            // Flush buffer every 10 lines, if too large, or for snapshot debug lines
+                            const bufferSize = this._outputLines.reduce((sum, line) => sum + line.length, 0);
+                            if (isSnapshotLine || this._outputLines.length >= 10 || bufferSize >= 4096) {
+                                rendererLogger.log(this._outputLines.join('\n'));
+                                this._outputLines = [];
+                            }
+                        }
+                    } catch (e) {
+                        if (e.matches(Gio.IOErrorEnum, Gio.IOErrorEnum.CANCELLED))
+                            return;
+
+                        logger.trace(`Read error: ${e.message}`);
+                    }
+
+                    // Add small delay to prevent tight loop
+                    if (this.running) {
+                        GLib.timeout_add(GLib.PRIORITY_LOW, 10, () => {
+                            this.read_output();
+                            return false;
+                        });
+                    }
+                }
+            );
+        } catch (e) {
+            logger.trace(`Failed to read output: ${e.message}`);
+        }
     }
 
     /**
