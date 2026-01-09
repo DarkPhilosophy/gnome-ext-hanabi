@@ -14,15 +14,15 @@ node scripts/sync-version.js
 echo "Updating lint status..."
 node scripts/update-lint-status.js
 
-# Update EGO version badges (optional)
-echo "Updating GNOME Extensions version..."
+# Update upstream badge (optional)
+echo "Updating upstream last-commit badge..."
 node scripts/fetch-ego-version.js || true
 
 echo "🏗️  Building Hanabi extension package..."
 
 PROJECT_DIR="$(cd "$(dirname "$0")" && pwd)"
-EXTENSION_UUID=$(rg -m1 "^uuid =" "$PROJECT_DIR/meson.build" | sed -E "s/uuid = '([^']+)'.*/\1/")
-SETTINGS_SCHEMA=$(rg -m1 "^schema =" "$PROJECT_DIR/meson.build" | sed -E "s/schema = '([^']+)'.*/\1/")
+EXTENSION_UUID=$(grep -m1 "^uuid =" "$PROJECT_DIR/meson.build" | sed -E "s/uuid = '([^']+)'.*/\1/")
+SETTINGS_SCHEMA=$(grep -m1 "^schema =" "$PROJECT_DIR/meson.build" | sed -E "s/schema = '([^']+)'.*/\1/")
 VERSION_MAJOR=$(node -p "require('./package.json').version.split('.')[0]")
 
 if [[ -z "$EXTENSION_UUID" || -z "$SETTINGS_SCHEMA" ]]; then

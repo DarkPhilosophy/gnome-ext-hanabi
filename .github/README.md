@@ -16,7 +16,7 @@
 **Status**: Active development in this fork.
 
 <!-- EGO-VERSION-START -->
-[![Status: Development](https://img.shields.io/badge/Status-Development-yellow)](https://github.com/DarkPhilosophy/gnome-ext-hanabi) ![GitHub](https://img.shields.io/badge/GitHub-v1-blue) ![GNOME](https://img.shields.io/badge/GNOME-49-green)
+[![Upstream Last Commit](https://img.shields.io/github/last-commit/jeffshee/gnome-ext-hanabi)](https://github.com/jeffshee/gnome-ext-hanabi)
 <!-- EGO-VERSION-END -->
 
 ## Validation Status
@@ -24,7 +24,7 @@
 <!-- LINT-RESULT-START -->
 ### Latest Linting Result
 > **Status**: ✅ **Passing**  
-> **Date**: 2026-01-09 16:38:07 UTC  
+> **Date**: 2026-01-09 16:45:04 UTC  
 > **Summary**: 0 errors, 0 warnings
 
 <details>
